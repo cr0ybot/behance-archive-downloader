@@ -1,0 +1,34 @@
+{
+	"name": "behance-archive-downloader",
+	"version": "1.0.0",
+	"description": "A script to download all livestream videos from behance.net",
+	"main": "index.js",
+	"scripts": {
+		"lint": "eslint ."
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/cr0ybot/behance-archive-downloader.git"
+	},
+	"keywords": [
+		"behance"
+	],
+	"author": {
+		"name": "Cory Hughart",
+		"email": "cory@coryhughart.com"
+	},
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/cr0ybot/behance-archive-downloader/issues"
+	},
+	"homepage": "https://github.com/cr0ybot/behance-archive-downloader#readme",
+	"dependencies": {
+		"puppeteer": "^23.11.1",
+		"sanitize-filename": "^1.6.3",
+		"yargs": "^17.7.2"
+	},
+	"devDependencies": {
+		"@stylistic/eslint-plugin-js": "^2.12.1",
+		"eslint": "^9.17.0"
+	}
+}
