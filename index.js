@@ -15,11 +15,14 @@ const sanitize = require('sanitize-filename');
 const yargs = require('yargs');
 
 const argv = yargs
-	.usage('Usage: $0 --user [user]')
-	.demandOption(['user'])
+	.usage('Usage: $0 --user [user] --path [path]')
+	.demandOption(['user', 'path'])
+	.describe('user', 'The Behance user to scrape.')
+	.describe('path', 'The path to save the downloaded videos.')
 	.argv;
 
 const user = argv.user;
+const downloadDir = argv.path;
 
 async function wait(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -216,11 +219,16 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 (async() => {
 	console.log('Verifying download directory...');
 
-	// Create a directory for the user if it doesn't exist.
-	const userDir = path.join(__dirname, user);
-	const userDirExists = await fs.access(userDir).then(() => true).catch(() => false);
-	if (!userDirExists) {
-		await fs.mkdir(userDir);
+	// Create a directory for downloads if it doesn't exist.
+	const downloadDirExists = await fs.access(downloadDir).then(() => true).catch(() => false);
+	if (!downloadDirExists) {
+		console.log('Creating download directory...');
+		try {
+			await fs.mkdir(downloadDirExists);
+		} catch (e) {
+			console.error('Failed to create download directory. Please choose a writable path.');
+			return;
+		}
 	}
 
 	console.log('Launching Puppeteer...');
@@ -234,8 +242,21 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 	});
 	const page = await browser.newPage();
 
+	/**
+	 * We are not provided a URL to download the video file directly. Instead,
+	 * we must use Puppeteer to hover and click on specific elements to initiate
+	 * the download. To set the download location, we must create a Chrome
+	 * Devtools Protocol session and use the Page.setDownloadBehavior method.
+	 */
+	const client = await page.createCDPSession();
+	await client.send('Browser.setDownloadBehavior', {
+		behavior: 'allowAndName', // Allow downloads and name the file with the GUID.
+		downloadPath: downloadDir,
+		eventsEnabled: true,
+	});
+
 	console.log('Restoring cookies if available...');
-	const cookiesRestored = await loadCookies(browser, userDir);
+	const cookiesRestored = await loadCookies(browser, downloadDir);
 
 	if (!cookiesRestored) {
 		console.log('Cookies not found. You will be required to log in.');
@@ -267,7 +288,7 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 	}
 
 	console.log('Saving cookies...');
-	const cookiesSaved = await saveCookies(browser, userDir);
+	const cookiesSaved = await saveCookies(browser, downloadDir);
 	if (!cookiesSaved) {
 		console.error('Failed to save cookies.');
 	}
@@ -287,22 +308,9 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 	// Get all grid items.
 	const gridItems = await page.$$('[class^=ContentGridLivestreams-grid-] > div');
 
-	/**
-	 * We are not provided a URL to download the video file directly. Instead,
-	 * we must use Puppeteer to hover and click on specific elements to initiate
-	 * the download. To set the download location, we must create a Chrome
-	 * Devtools Protocol session and use the Page.setDownloadBehavior method.
-	 */
-	const client = await page.createCDPSession();
-	await client.send('Browser.setDownloadBehavior', {
-		behavior: 'allowAndName', // Allow downloads and name the file with the GUID.
-		downloadPath: userDir,
-		eventsEnabled: true,
-	});
-
 	// Extract video data from each grid item and download the video.
 	for (const gridItem of gridItems) {
-		await scrapeVideo(gridItem, page, client, userDir);
+		await scrapeVideo(gridItem, page, client, downloadDir);
 	}
 
 	console.log('Scraping complete. Closing Puppeteer...');
