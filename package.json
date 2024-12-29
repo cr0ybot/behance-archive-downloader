@@ -3,6 +3,9 @@
 	"version": "1.0.0",
 	"description": "A script to download all livestream videos from behance.net",
 	"main": "index.js",
+	"bin": {
+		"behance-archive-downloader": "index.js"
+	},
 	"scripts": {
 		"lint": "eslint ."
 	},
