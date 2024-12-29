@@ -33,3 +33,7 @@ Once you are logged in, the script will navigate to your livestreams page, scrol
 Each file is renamed after the download is complete to include the livestream date and title: `YYYY-MM-DD - Livestream Title.mp4`. This way, the files will be sorted chronologically in the download directory.
 
 Each video downloaded will have a line added to a `_videos.csv` file in the download directory with the video's original URL, UUID, title, date, duration, and the final filename of the downloaded video. Note that this file is used to track which videos have been downloaded so that if the script is stopped and restarted, it will not re-download videos that have already been downloaded.
+
+## Notes on Windows Usage
+
+If you are using Windows, script execution may be blocked by default due to security settings. See this [Medium article](https://achmadhadikurnia.medium.com/fixing-the-error-running-scripts-is-disabled-on-this-system-67e5500ba872_) for instructions on how to enable script execution. You will likely need to use the `Bypass` option.
