@@ -14,6 +14,9 @@ const path = require('path');
 const sanitize = require('sanitize-filename');
 const yargs = require('yargs');
 
+const COOKIES_FILENAME = '_cookies.json';
+const CSV_FILENAME = '_videos.csv';
+
 const argv = yargs
 	.usage('Usage: $0 --user [user] --path [path]')
 	.demandOption(['user', 'path'])
@@ -23,6 +26,8 @@ const argv = yargs
 
 const user = argv.user;
 const downloadDir = argv.path;
+const csvFilename = path.join(downloadDir, CSV_FILENAME);
+const cookiesFilename = path.join(downloadDir, COOKIES_FILENAME);
 
 async function wait(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,11 +39,10 @@ async function wait(ms) {
  * @param {puppeteer.Browser} browser The browser object.
  * @param {string} cookiesPath The path to save the cookies to.
  */
-async function saveCookies(browser, cookiesPath) {
+async function saveCookies(browser) {
 	const cookies = await browser.cookies();
-	const filename = path.join(cookiesPath, 'cookies.json');
 	try {
-		await fs.writeFile(filename, JSON.stringify(cookies, null, 2));
+		await fs.writeFile(cookiesFilename, JSON.stringify(cookies, null, 2));
 		return true;
 	}
 	catch (e) {
@@ -53,13 +57,53 @@ async function saveCookies(browser, cookiesPath) {
  * @param {string} cookiesPath The path to load the cookies from.
  * @returns {boolean} True if cookies were loaded.
  */
-async function loadCookies(browser, cookiesPath) {
-	const filename = path.join(cookiesPath, 'cookies.json');
+async function loadCookies(browser) {
 	try {
-		const cookiesString = await fs.readFile(filename);
+		const cookiesString = await fs.readFile(cookiesFilename);
 		const cookies = JSON.parse(cookiesString);
 		await browser.setCookie(...cookies);
 		return true;
+	} catch (e) {
+		return false;
+	}
+}
+
+/**
+ * Initialize CSV file with headers if file does not exist.
+ */
+async function initCSV() {
+	const headers = 'URL,UUID,Title,Date,Duration,Filename\n';
+
+	try {
+		await fs.access(csvFilename);
+	} catch (e) {
+		await fs.writeFile(csvFilename, headers);
+	}
+}
+
+/**
+ * Add video data to the CSV file.
+ *
+ * @param {Object} videoData The video data to add.
+ */
+async function addVideoDataToCSV(videoData) {
+	const { url, uuid, title, date, duration, filename } = videoData;
+	const csvLine = `${url},${uuid},${title},${date},${duration},${filename}\n`;
+
+	await fs.appendFile(csvFilename, csvLine);
+}
+
+/**
+ * Check if video data is already in the CSV file.
+ * This is used to prevent duplicate downloads.
+ *
+ * @param {string} uuid The UUID of the video.
+ * @returns {boolean} True if the video data is in the CSV file.
+ */
+async function isVideoDataInCSV(uuid) {
+	try {
+		const csvData = await fs.readFile(csvFilename, 'utf8');
+		return csvData.includes(uuid);
 	} catch (e) {
 		return false;
 	}
@@ -151,13 +195,19 @@ async function extractVideoDataFromElementHandle(elementHandle) {
  *
  * @param {puppeteer.ElementHandle} elementHandle - The element that contains the video.
  */
-async function scrapeVideo(elementHandle, page, client, downloadDir) {
+async function scrapeVideo(elementHandle, page, client, downloadDir, csvFilename) {
 	// Return a promise early so that we can resolve only after the download is complete.
 	return new Promise((resolve, reject) => {
 		(async() => {
 			const videoData = await extractVideoDataFromElementHandle(elementHandle);
 			const { url, uuid, title, date, duration } = videoData;
 			let downloadFilename = '';
+
+			if (await isVideoDataInCSV(uuid, csvFilename)) {
+				console.log(`Video already downloaded: ${date} - ${title} (${uuid})`);
+				resolve();
+				return;
+			}
 
 			console.log(`Downloading video: ${date} - ${title} (${uuid})...`);
 
@@ -192,6 +242,9 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 						await fs.rename(path.join(downloadDir, downloadFilename), filepath);
 
 						console.log(`File renamed: ${filepath}`);
+
+						// Add video data to the CSV file.
+						await addVideoDataToCSV({ ...videoData, filename }, csvFilename);
 						resolve();
 					})();
 				}
@@ -217,7 +270,7 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 }
 
 (async() => {
-	console.log('Verifying download directory...');
+	console.log(`Verifying download directory: ${downloadDir}`);
 
 	// Create a directory for downloads if it doesn't exist.
 	const downloadDirExists = await fs.access(downloadDir).then(() => true).catch(() => false);
@@ -230,6 +283,10 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 			return;
 		}
 	}
+
+	// Create a CSV file to store video data and track progress.
+	console.log(`Maybe initializing CSV file: ${csvFilename}`);
+	await initCSV();
 
 	console.log('Launching Puppeteer...');
 
@@ -256,7 +313,7 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 	});
 
 	console.log('Restoring cookies if available...');
-	const cookiesRestored = await loadCookies(browser, downloadDir);
+	const cookiesRestored = await loadCookies(browser);
 
 	if (!cookiesRestored) {
 		console.log('Cookies not found. You will be required to log in.');
@@ -288,7 +345,7 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 	}
 
 	console.log('Saving cookies...');
-	const cookiesSaved = await saveCookies(browser, downloadDir);
+	const cookiesSaved = await saveCookies(browser);
 	if (!cookiesSaved) {
 		console.error('Failed to save cookies.');
 	}
@@ -307,9 +364,12 @@ async function scrapeVideo(elementHandle, page, client, downloadDir) {
 
 	// Get all grid items.
 	const gridItems = await page.$$('[class^=ContentGridLivestreams-grid-] > div');
+	const totalVideos = gridItems.length;
 
 	// Extract video data from each grid item and download the video.
-	for (const gridItem of gridItems) {
+	for (let i = 0; i < totalVideos; i++) {
+		console.log(`Scraping video ${i + 1} of ${totalVideos}...`);
+		const gridItem = gridItems[i];
 		await scrapeVideo(gridItem, page, client, downloadDir);
 	}
 
