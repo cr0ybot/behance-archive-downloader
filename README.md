@@ -13,7 +13,8 @@ Behance has shut down personal livestreaming as of December 2024, and there is n
 ## Installation
 
 1. Clone or download this repository and navigate to the project folder in your terminal
-2. Run `npm install -g .` within the project folder to install the script globally
+2. Run `npm install` within the project folder to install the project dependencies
+3. Run `npm install -g .` within the project folder to install the script globally
 
 ## Usage
 
