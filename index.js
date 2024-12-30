@@ -183,10 +183,16 @@ async function extractVideoDataFromElementHandle(elementHandle) {
 	const date = new Date(rawDate).toISOString().split('T')[0];
 	// Duration comes from the text of the "Card-duration-*" element.
 	const duration = await elementHandle.$eval('[class^=Duration-duration-]', el => el.textContent);
+	// Check for private tooltip. If private, video is not downloadable(!?).
+	let isPrivate = false;
+	const isPrivateEl = await elementHandle.$('[class^=PrivacyLockTooltip-lockWrapper-]');
+	if (isPrivateEl) {
+		isPrivate = true;
+	}
 
-	console.log('Extracted video data:', { url, uuid, title, date, duration });
+	console.log('Extracted video data:', { url, uuid, title, date, duration, isPrivate });
 
-	return { url, uuid, title, date, duration };
+	return { url, uuid, title, date, duration, isPrivate };
 }
 
 /**
@@ -200,11 +206,19 @@ async function scrapeVideo(elementHandle, page, client, downloadDir, csvFilename
 	return new Promise((resolve, reject) => {
 		(async() => {
 			const videoData = await extractVideoDataFromElementHandle(elementHandle);
-			const { url, uuid, title, date, duration } = videoData;
+			const { url, uuid, title, date, duration, isPrivate } = videoData;
 			let downloadFilename = '';
 
-			if (await isVideoDataInCSV(uuid, csvFilename)) {
+			if (await isVideoDataInCSV(uuid)) {
 				console.log(`Video already downloaded: ${date} - ${title} (${uuid})`);
+				resolve();
+				return;
+			}
+
+			if (isPrivate) {
+				console.log(`Video is private, skipping: ${date} - ${title} (${uuid})`);
+				// Add video data to the CSV file.
+				await addVideoDataToCSV({ ...videoData, filename: 'PRIVATE - video not downloadable' });
 				resolve();
 				return;
 			}
@@ -244,7 +258,7 @@ async function scrapeVideo(elementHandle, page, client, downloadDir, csvFilename
 						console.log(`File renamed: ${filepath}`);
 
 						// Add video data to the CSV file.
-						await addVideoDataToCSV({ ...videoData, filename }, csvFilename);
+						await addVideoDataToCSV({ ...videoData, filename });
 						resolve();
 					})();
 				}
